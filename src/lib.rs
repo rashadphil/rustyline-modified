@@ -23,6 +23,7 @@
 mod binding;
 mod command;
 pub mod completion;
+pub mod completion_type;
 pub mod config;
 mod edit;
 pub mod error;
@@ -190,65 +191,16 @@ fn complete_line<H: Helper>(
             s.refresh_line()?;
             Ok(None)
         }
+    } else if CompletionType::CircularList == config.completion_type() {
+        completion_type::circular_completion_list_loop(
+            rdr,
+            s,
+            input_state,
+            completer,
+            start,
+            candidates,
+        )
     } else {
-        // if fuzzy feature is enabled and on unix based systems check for the
-        // corresponding completion_type
-        #[cfg(all(unix, feature = "with-fuzzy"))]
-        {
-            use std::borrow::Cow;
-            if CompletionType::Fuzzy == config.completion_type() {
-                struct Candidate {
-                    index: usize,
-                    text: String,
-                }
-                impl SkimItem for Candidate {
-                    fn text(&self) -> Cow<str> {
-                        Cow::Borrowed(&self.text)
-                    }
-                }
-
-                let (tx_item, rx_item): (SkimItemSender, SkimItemReceiver) = unbounded();
-
-                candidates
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| Candidate {
-                        index: i,
-                        text: c.display().to_owned(),
-                    })
-                    .for_each(|c| {
-                        let _ = tx_item.send(Arc::new(c));
-                    });
-                drop(tx_item); // so that skim could know when to stop waiting for more items.
-
-                // setup skim and run with input options
-                // will display UI for fuzzy search and return selected results
-                // by default skim multi select is off so only expect one selection
-
-                let options = SkimOptionsBuilder::default()
-                    .height(Some("20%"))
-                    .prompt(Some("? "))
-                    .reverse(true)
-                    .build()
-                    .unwrap();
-
-                let selected_items = Skim::run_with(&options, Some(rx_item))
-                    .map(|out| out.selected_items)
-                    .unwrap_or_else(Vec::new);
-
-                // match the first (and only) returned option with the candidate and update the
-                // line otherwise only refresh line to clear the skim UI changes
-                if let Some(item) = selected_items.first() {
-                    let item: &Candidate = (*item).as_any() // cast to Any
-                        .downcast_ref::<Candidate>() // downcast to concrete type
-                        .expect("something wrong with downcast");
-                    if let Some(candidate) = candidates.get(item.index) {
-                        completer.update(&mut s.line, start, candidate.replacement());
-                    }
-                }
-                s.refresh_line()?;
-            }
-        };
         Ok(None)
     }
 }
@@ -333,6 +285,12 @@ fn page_completions<C: Candidate, H: Helper>(
                     ab.push_str(&highlighter.highlight_candidate(candidate, CompletionType::List));
                 } else {
                     ab.push_str(candidate);
+                }
+
+                if num_rows == 1 {
+                    ab.push(' ');
+                    ab.push(' ');
+                    continue;
                 }
                 if ((col + 1) * num_rows) + row < candidates.len() {
                     for _ in width..max_width {

@@ -261,6 +261,9 @@ pub enum CompletionType {
     /// (like in Bash/Readline).
     List,
 
+    /// Custom Variant
+    CircularList,
+
     /// Complete the match using fuzzy search and selection
     /// (like fzf and plugins)
     /// Currently only available for unix platforms as dependency on

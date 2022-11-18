@@ -897,6 +897,10 @@ impl PosixRenderer {
         // clear the line
         self.buffer.push_str("\r\x1b[K");
     }
+
+    pub(crate) fn clear_screen_from_cursor_down(&mut self) -> Result<()> {
+        self.write_and_flush("\x1b[0J")
+    }
 }
 
 impl Renderer for PosixRenderer {
